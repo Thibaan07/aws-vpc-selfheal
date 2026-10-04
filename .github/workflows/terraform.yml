@@ -1,0 +1,106 @@
+# Name shown in the "Actions" tab on GitHub
+name: terraform
+
+# TRIGGERS: when should this workflow start?
+on:
+  pull_request:          # someone opens/updates a PR...
+    branches: [main]     # ...that targets main -> runs the "plan" job
+  push:                  # code is pushed...
+    branches: [main]     # ...to main (a merge counts) -> runs the "apply" job
+
+# PERMISSIONS: what this workflow may do on GitHub
+permissions:
+  id-token: write        # lets the run request an OIDC badge (needed to log in to AWS)
+  contents: read         # lets it download (read) your repo code
+  pull-requests: write   # lets it post the plan as a comment on the PR
+
+# ENV: values available to every step
+env:
+  # Any variable named TF_VAR_x fills Terraform variable x.
+  # This replaces your gitignored terraform.tfvars (my_ip) on the runner.
+  TF_VAR_my_ip: ${{ secrets.MY_IP }}
+
+jobs:
+  # ---------- JOB 1: CI (check the change, build nothing) ----------
+
+  plan:
+    if: github.event_name == 'pull_request'   # only run on PRs
+    runs-on: ubuntu-latest                    # fresh, empty GitHub machine
+    steps:
+      # Download the repo onto the machine
+      - uses: actions/checkout@v4
+
+      # Show the OIDC badge to AWS, assume the role, get temporary credentials
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::589458396976:role/github-actions-terraform
+          aws-region: us-east-1
+
+      # Install Terraform (same version as your laptop)
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      # The runner has no ~/.ssh/tf-key.pub, but main.tf reads it.
+      # Recreate it from the GitHub variable (public key only, not secret).
+      - name: Write public key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ vars.TF_PUBLIC_KEY }}" > ~/.ssh/tf-key.pub
+
+      # Connect to the S3 backend and read the state
+      - run: terraform init -input=false        # -input=false: never wait for typing
+
+      # Check the code for errors (typos, bad syntax)
+      - run: terraform validate
+
+      # Work out what would change. "id: plan" lets later steps use its output.
+      - id: plan
+        run: terraform plan -input=false -no-color   # -no-color: clean text for a comment
+
+      # Post the plan text as a comment on the PR
+      - name: Post plan to PR
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}   # pass the plan output to the script
+        with:
+          script: |
+            // Three backticks, built this way so they don't break the YAML
+            const fence = "`".repeat(3);
+            // GitHub comments have a size limit, so keep only the last 60000 chars
+            const plan = process.env.PLAN.slice(-60000);
+            // Create the comment on this PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: "### Terraform plan\n" + fence + "\n" + plan + "\n" + fence
+            });
+
+  # ---------- JOB 2: CD (deploy to AWS) ----------
+  apply:
+    if: github.event_name == 'push'   # only run after a push/merge to main
+    runs-on: ubuntu-latest
+    steps:
+      # Same setup steps as the plan job
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::589458396976:role/github-actions-terraform
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Write public key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ vars.TF_PUBLIC_KEY }}" > ~/.ssh/tf-key.pub
+
+      - run: terraform init -input=false
+
+      # Build/change the real infrastructure.
+      # -auto-approve: skip the "type yes" prompt, since nobody is there to type it.
+      - run: terraform apply -auto-approve -input=false
