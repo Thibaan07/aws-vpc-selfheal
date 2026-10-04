@@ -44,3 +44,5 @@ terraform.rc
 # planout
 
 *.pem
+trust-policy.json
+permissions-policy.json
