@@ -43,3 +43,8 @@ variable "instance_type" {
   type        = string
   default     = "t3.micro"
 }
+
+variable "alert_topic_arn" {
+  description = "ARN of the SNS topic that receives alarm notifications"
+  type        = string
+}

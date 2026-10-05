@@ -19,6 +19,7 @@ env:
   # Any variable named TF_VAR_x fills Terraform variable x.
   # This replaces your gitignored terraform.tfvars (my_ip) on the runner.
   TF_VAR_my_ip: ${{ secrets.MY_IP }}
+  TF_VAR_alert_topic_arn: ${{ vars.ALERT_TOPIC_ARN }}
 
 jobs:
   # ---------- JOB 1: CI (check the change, build nothing) ----------
