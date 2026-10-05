@@ -46,3 +46,5 @@ terraform.rc
 *.pem
 trust-policy.json
 permissions-policy.json
+
+__pycache__/

@@ -101,6 +101,7 @@ resource "aws_instance" "web" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.main.key_name
+  iam_instance_profile = aws_iam_instance_profile.ssm.name
 
   metadata_options {
     http_tokens = "required"
@@ -118,4 +119,42 @@ resource "aws_instance" "web" {
   tags = {
     Name = "tf-web-server"
   }
+}
+
+resource "aws_cloudwatch_metric_alarm" "status_check" {
+  alarm_name          = "selfheal-status-check-failed"
+  alarm_description   = "Instance status check failed (EC2 health check)"
+  namespace           = "AWS/EC2"
+  metric_name         = "StatusCheckFailed"
+  dimensions          = { InstanceId = aws_instance.web.id }
+  statistic           = "Maximum"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
+  period              = 60
+  evaluation_periods  = 2
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.alert_topic_arn]
+}
+
+resource "aws_iam_role" "ssm" {
+  name = "selfheal-ec2-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ssm.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ssm" {
+  name = "selfheal-ec2-ssm-profile"
+  role = aws_iam_role.ssm.name
 }
