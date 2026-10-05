@@ -101,7 +101,7 @@ resource "aws_instance" "web" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.main.key_name
-  iam_instance_profile = aws_iam_instance_profile.ssm.name
+  iam_instance_profile   = aws_iam_instance_profile.ssm.name
 
   metadata_options {
     http_tokens = "required"
@@ -134,6 +134,24 @@ resource "aws_cloudwatch_metric_alarm" "status_check" {
   evaluation_periods  = 2
   treat_missing_data  = "notBreaching"
   alarm_actions       = [var.alert_topic_arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "instance_reboot" {
+  alarm_name          = "selfheal-instance-reboot"
+  alarm_description   = "Instance status check failed: reboot the instance and email me"
+  namespace           = "AWS/EC2"
+  metric_name         = "StatusCheckFailed_Instance"
+  dimensions          = { InstanceId = aws_instance.web.id }
+  statistic           = "Maximum"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
+  period              = 60
+  evaluation_periods  = 2
+  treat_missing_data  = "notBreaching"
+  alarm_actions = [
+    "arn:aws:automate:us-east-1:ec2:reboot",
+    var.alert_topic_arn,
+  ]
 }
 
 resource "aws_iam_role" "ssm" {
