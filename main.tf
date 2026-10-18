@@ -123,7 +123,7 @@ resource "aws_instance" "web" {
 
 resource "aws_cloudwatch_metric_alarm" "status_check" {
   alarm_name          = "selfheal-status-check-failed"
-  alarm_description   = "Instance status check failed (EC2 health check)"
+  alarm_description   = "SEV2 | Instance status check failed on tf-web-server | Owner: Thibaan07 | Action: email only | Runbook: see README, section Runbook"
   namespace           = "AWS/EC2"
   metric_name         = "StatusCheckFailed"
   dimensions          = { InstanceId = aws_instance.web.id }
@@ -134,11 +134,20 @@ resource "aws_cloudwatch_metric_alarm" "status_check" {
   evaluation_periods  = 2
   treat_missing_data  = "notBreaching"
   alarm_actions       = [var.alert_topic_arn]
+
+  tags = {
+    Owner    = "Thibaan07"
+    Service  = "selfheal-web"
+    Severity = "sev2"
+    Runbook  = "https://github.com/Thibaan07/aws-vpc-selfheal"
+  }
 }
+
+
 
 resource "aws_cloudwatch_metric_alarm" "instance_reboot" {
   alarm_name          = "selfheal-instance-reboot"
-  alarm_description   = "Instance status check failed: reboot the instance and email me"
+  alarm_description   = "SEV2 | Instance check failed on tf-web-server | Owner: Thibaan07 | Action: reboot the instance, then email | Runbook: see README, section Runbook"
   namespace           = "AWS/EC2"
   metric_name         = "StatusCheckFailed_Instance"
   dimensions          = { InstanceId = aws_instance.web.id }
@@ -152,6 +161,13 @@ resource "aws_cloudwatch_metric_alarm" "instance_reboot" {
     "arn:aws:automate:us-east-1:ec2:reboot",
     var.alert_topic_arn,
   ]
+
+  tags = {
+    Owner    = "Thibaan07"
+    Service  = "selfheal-web"
+    Severity = "sev2"
+    Runbook  = "https://github.com/Thibaan07/aws-vpc-selfheal"
+  }
 }
 
 resource "aws_iam_role" "ssm" {
@@ -175,4 +191,81 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 resource "aws_iam_instance_profile" "ssm" {
   name = "selfheal-ec2-ssm-profile"
   role = aws_iam_role.ssm.name
+}
+
+resource "aws_cloudwatch_dashboard" "selfheal" {
+  dashboard_name = "selfheal-overview"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Status checks (1 = failed)"
+          region = "us-east-1"
+          view   = "timeSeries"
+          stat   = "Maximum"
+          period = 60
+          metrics = [
+            ["AWS/EC2", "StatusCheckFailed", "InstanceId", aws_instance.web.id],
+            ["AWS/EC2", "StatusCheckFailed_Instance", "InstanceId", aws_instance.web.id],
+            ["AWS/EC2", "StatusCheckFailed_System", "InstanceId", aws_instance.web.id]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "CPU utilization (%)"
+          region = "us-east-1"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.web.id]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Network in and out (bytes)"
+          region = "us-east-1"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/EC2", "NetworkIn", "InstanceId", aws_instance.web.id],
+            ["AWS/EC2", "NetworkOut", "InstanceId", aws_instance.web.id]
+          ]
+        }
+      },
+      {
+        type   = "alarm"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title = "Alarm status"
+          alarms = [
+            aws_cloudwatch_metric_alarm.status_check.arn,
+            aws_cloudwatch_metric_alarm.instance_reboot.arn
+          ]
+        }
+      }
+    ]
+  })
 }
