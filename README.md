@@ -14,9 +14,8 @@ A small website on AWS, built entirely as code. If the site stops working, it fi
 
 ## Architecture
 
-<!-- ADD THE ARCHITECTURE DIAGRAM HERE. Save it as docs/architecture.png, then replace this whole comment with:
-![Architecture diagram](docs/architecture.png)
--->
+<img width="1295" height="1005" alt="image" src="https://github.com/user-attachments/assets/51628037-66f2-49a1-a3c7-a41cdcc4c8de" />
+
 
 ## How a visitor reaches the server
 
